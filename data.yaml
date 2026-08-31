@@ -1,0 +1,7 @@
+train: "C:/Users/thaku/PycharmProjects/ML Algorithm/Onion detection.yolo26 (1)/train/images"
+val: "C:/Users/thaku/PycharmProjects/ML Algorithm/Onion detection.yolo26 (1)/valid/images"
+
+nc: 1
+
+names:
+  0: onion
