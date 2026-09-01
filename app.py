@@ -1,75 +1,57 @@
-import streamlit as st
-from ultralytics import YOLO
-from pathlib import Path
-import cv2
-import numpy as np
-import pandas as pd
+import os
 import json
 import tempfile
+from pathlib import Path
 
-from onion_analysis import analyze_onion
+import pandas as pd
+import streamlit as st
+from PIL import Image
+
+from roboflow_grading import analyze_onions
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
+# ==========================================================
+# PAGE CONFIGURATION
+# ==========================================================
 
 st.set_page_config(
-    page_title="Onion Quality Inspector",
+    page_title="Onion Quality Assessment System",
     page_icon="🧅",
     layout="wide"
 )
 
 
-# ============================================================
-# PROJECT PATHS
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-
-DETECTOR_PATH = (
-    BASE_DIR
-    / "models"
-    / "onion_detector_best.pt"
-)
-
-QUALITY_MODEL_PATH = (
-    BASE_DIR
-    / "models"
-    / "onion_quality_best.pt"
-)
-
-
-# ============================================================
+# ==========================================================
 # CUSTOM CSS
-# ============================================================
+# ==========================================================
 
 st.markdown(
     """
     <style>
 
-    .main-title {
-        font-size: 42px;
-        font-weight: 700;
-        margin-bottom: 0px;
+    .main {
+        background-color: #0e1117;
     }
 
-    .subtitle {
+    .title-text {
+        font-size: 42px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 5px;
+    }
+
+    .subtitle-text {
         font-size: 18px;
-        margin-bottom: 25px;
+        text-align: center;
+        color: #9ca3af;
+        margin-bottom: 30px;
     }
 
     .metric-card {
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #dddddd;
+        padding: 15px;
+        border-radius: 10px;
         text-align: center;
-    }
-
-    .section-title {
-        font-size: 25px;
-        font-weight: 600;
-        margin-top: 20px;
+        background-color: #1c2330;
     }
 
     </style>
@@ -78,779 +60,742 @@ st.markdown(
 )
 
 
-# ============================================================
-# HEADER
-# ============================================================
+# ==========================================================
+# HELPER FUNCTION
+# ==========================================================
 
-st.markdown(
-    '<div class="main-title">🧅 Onion Quality Inspector</div>',
-    unsafe_allow_html=True
-)
+def get_output_image(result):
 
-st.markdown(
-    '<div class="subtitle">'
-    'AI-assisted onion detection and quality assessment'
-    '</div>',
-    unsafe_allow_html=True
-)
+    """
+    Returns the output image in a format Streamlit can display.
+
+    Supports:
+    - File path
+    - PIL Image
+    - NumPy/OpenCV image
+    """
+
+    output_image = result.get("output_image")
+
+    if output_image is None:
+        return None
+
+    # If output is a file path
+    if isinstance(output_image, (str, Path)):
+
+        output_path = Path(output_image)
+
+        if output_path.exists():
+            return Image.open(output_path)
+
+        return None
+
+    # Otherwise return image object directly
+    return output_image
 
 
-# ============================================================
+# ==========================================================
 # SIDEBAR
-# ============================================================
+# ==========================================================
 
 with st.sidebar:
 
-    st.header("⚙️ Settings")
+    st.title("⚙️ System Information")
 
-    detection_confidence = st.slider(
-        "Detection confidence",
-        min_value=0.10,
-        max_value=0.90,
-        value=0.25,
-        step=0.05
+    st.markdown("### Detection Model")
+
+    st.success("Roboflow Object Detection")
+
+    st.markdown("---")
+
+    st.markdown("### Quality Categories")
+
+    st.markdown("🟢 **Healthy**")
+
+    st.markdown("🔴 **Rotten**")
+
+    st.markdown("🌱 **Sprouted**")
+
+    st.markdown("---")
+
+    st.markdown("### Workflow")
+
+    st.markdown(
+        """
+        **1.** Upload Image
+
+        **2.** Run AI Detection
+
+        **3.** Assess Onion Quality
+
+        **4.** Display Results
+        """
     )
 
-    quality_confidence = st.slider(
-        "Quality confidence",
-        min_value=0.50,
-        max_value=0.99,
-        value=0.75,
-        step=0.05
-    )
-
-    st.divider()
-
-    st.write("### Models")
-
-    st.write(
-        "🔍 Onion Detector"
-    )
-
-    st.write(
-        "🧠 Healthy / Unhealthy Classifier"
-    )
-
-    st.divider()
+    st.markdown("---")
 
     st.caption(
-        "Phase 1B Prototype"
+        "AI-based Onion Detection and Quality Assessment"
     )
 
 
-# ============================================================
-# CHECK MODELS
-# ============================================================
-
-if not DETECTOR_PATH.exists():
-
-    st.error(
-        f"Detector model not found:\n{DETECTOR_PATH}"
-    )
-
-    st.stop()
-
-
-if not QUALITY_MODEL_PATH.exists():
-
-    st.error(
-        f"Quality model not found:\n{QUALITY_MODEL_PATH}"
-    )
-
-    st.stop()
-
-
-# ============================================================
-# LOAD MODELS
-# ============================================================
-
-@st.cache_resource
-def load_models():
-
-    detector = YOLO(
-        str(DETECTOR_PATH)
-    )
-
-    quality_model = YOLO(
-        str(QUALITY_MODEL_PATH)
-    )
-
-    return detector, quality_model
-
-
-with st.spinner("Loading AI models..."):
-
-    detector, quality_model = load_models()
-
-
-# ============================================================
-# IMAGE UPLOAD
-# ============================================================
+# ==========================================================
+# HEADER
+# ==========================================================
 
 st.markdown(
-    '<div class="section-title">'
-    '📷 Upload Onion Batch'
+    '<div class="title-text">🧅 Onion Quality Assessment System</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="subtitle-text">'
+    'Detect onions and classify them as Healthy, Rotten or Sprouted'
     '</div>',
     unsafe_allow_html=True
 )
 
+
+# ==========================================================
+# FILE UPLOADER
+# ==========================================================
+
 uploaded_file = st.file_uploader(
-    "Upload an image containing onions",
-    type=[
-        "jpg",
-        "jpeg",
-        "png",
-        "webp"
-    ]
+    "📤 Upload Onion Image",
+    type=["jpg", "jpeg", "png"]
 )
 
 
-# ============================================================
-# MAIN PROCESSING
-# ============================================================
+# ==========================================================
+# PROCESS IMAGE
+# ==========================================================
 
 if uploaded_file is not None:
 
-    # --------------------------------------------------------
-    # Read image
-    # --------------------------------------------------------
+    # ------------------------------------------------------
+    # SAVE UPLOADED FILE TEMPORARILY
+    # ------------------------------------------------------
 
-    file_bytes = np.asarray(
-        bytearray(
-            uploaded_file.read()
-        ),
-        dtype=np.uint8
+    suffix = Path(uploaded_file.name).suffix
+
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=suffix
     )
 
-    image = cv2.imdecode(
-        file_bytes,
-        cv2.IMREAD_COLOR
+    temp_file.write(
+        uploaded_file.getbuffer()
     )
 
-    if image is None:
+    temp_file.close()
 
-        st.error(
-            "Could not read the uploaded image."
-        )
-
-        st.stop()
+    temp_image_path = temp_file.name
 
 
-    # --------------------------------------------------------
-    # Display original image
-    # --------------------------------------------------------
+    # ------------------------------------------------------
+    # LOAD ORIGINAL IMAGE
+    # ------------------------------------------------------
 
-    st.markdown(
-        '<div class="section-title">'
-        '🔍 Inspection'
-        '</div>',
-        unsafe_allow_html=True
+    original_image = Image.open(
+        uploaded_file
     )
+
+
+    # ======================================================
+    # DISPLAY ORIGINAL IMAGE + ANALYSIS AREA
+    # ======================================================
 
     col1, col2 = st.columns(2)
 
+
     with col1:
 
-        st.subheader("Original Image")
+        st.subheader("📷 Original Image")
 
         st.image(
-            cv2.cvtColor(
-                image,
-                cv2.COLOR_BGR2RGB
-            ),
+            original_image,
             use_container_width=True
         )
 
-
-    # --------------------------------------------------------
-    # Run YOLO detector
-    # --------------------------------------------------------
-
-    with st.spinner(
-        "Detecting onions..."
-    ):
-
-        results = detector(
-            image,
-            conf=detection_confidence,
-            verbose=False
-        )
-
-    result = results[0]
-
-
-    # --------------------------------------------------------
-    # Store results
-    # --------------------------------------------------------
-
-    onion_data = []
-
-    annotated_image = image.copy()
-
-
-    # ========================================================
-    # PROCESS EACH ONION
-    # ========================================================
-
-    for i, box in enumerate(
-        result.boxes
-    ):
-
-        detection_conf = float(
-            box.conf[0]
-        )
-
-
-        # ----------------------------------------------------
-        # Bounding box
-        # ----------------------------------------------------
-
-        x1, y1, x2, y2 = map(
-            int,
-            box.xyxy[0]
-        )
-
-
-        x1 = max(
-            0,
-            x1
-        )
-
-        y1 = max(
-            0,
-            y1
-        )
-
-        x2 = min(
-            image.shape[1],
-            x2
-        )
-
-        y2 = min(
-            image.shape[0],
-            y2
-        )
-
-
-        # ----------------------------------------------------
-        # Crop onion
-        # ----------------------------------------------------
-
-        crop = image[
-            y1:y2,
-            x1:x2
-        ]
-
-
-        if crop.size == 0:
-
-            continue
-
-
-        # ----------------------------------------------------
-        # Quality classification
-        # ----------------------------------------------------
-
-        quality_results = quality_model(
-            crop,
-            verbose=False
-        )
-
-        quality_result = (
-            quality_results[0]
-        )
-
-
-        class_id = int(
-            quality_result.probs.top1
-        )
-
-        condition_conf = float(
-            quality_result.probs.top1conf
-        )
-
-        condition = (
-            quality_result.names[
-                class_id
-            ]
-        )
-
-
-        # ----------------------------------------------------
-        # Manual review threshold
-        # ----------------------------------------------------
-
-        if condition_conf < quality_confidence:
-
-            displayed_condition = (
-                "Manual Review"
-            )
-
-        else:
-
-            displayed_condition = (
-                condition.title()
-            )
-
-
-        # ----------------------------------------------------
-        # OpenCV analysis
-        # ----------------------------------------------------
-
-        analysis = analyze_onion(
-            crop,
-            debug=False
-        )
-
-
-        # ----------------------------------------------------
-        # Store data
-        # ----------------------------------------------------
-
-        onion_info = {
-
-            "Onion": i + 1,
-
-            "Detection Confidence":
-                round(
-                    detection_conf,
-                    3
-                ),
-
-            "Condition":
-                displayed_condition,
-
-            "Condition Confidence":
-                round(
-                    condition_conf,
-                    3
-                ),
-
-            "X1": x1,
-            "Y1": y1,
-            "X2": x2,
-            "Y2": y2
-        }
-
-
-        if analysis:
-
-            onion_info.update({
-
-                "Area (px²)":
-                    analysis["area"],
-
-                "Width (px)":
-                    analysis["width"],
-
-                "Height (px)":
-                    analysis["height"],
-
-                "Aspect Ratio":
-                    analysis["aspect_ratio"],
-
-                "Circularity":
-                    analysis["circularity"],
-
-                "Brightness":
-                    analysis[
-                        "mean_brightness"
-                    ],
-
-                "Analysis Method":
-                    analysis["method"]
-            })
-
-        else:
-
-            onion_info.update({
-
-                "Area (px²)": None,
-
-                "Width (px)": None,
-
-                "Height (px)": None,
-
-                "Aspect Ratio": None,
-
-                "Circularity": None,
-
-                "Brightness": None,
-
-                "Analysis Method": "Failed"
-            })
-
-
-        onion_data.append(
-            onion_info
-        )
-
-
-        # ====================================================
-        # DRAW BOUNDING BOX
-        # ====================================================
-
-        if displayed_condition == "Healthy":
-
-            box_color = (
-                0,
-                200,
-                0
-            )
-
-        elif displayed_condition == "Unhealthy":
-
-            box_color = (
-                0,
-                0,
-                255
-            )
-
-        else:
-
-            box_color = (
-                0,
-                165,
-                255
-            )
-
-
-        cv2.rectangle(
-
-            annotated_image,
-
-            (x1, y1),
-
-            (x2, y2),
-
-            box_color,
-
-            3
-        )
-
-
-        # ----------------------------------------------------
-        # Label
-        # ----------------------------------------------------
-
-        label = (
-            f"#{i + 1} "
-            f"{displayed_condition} "
-            f"{condition_conf:.2f}"
-        )
-
-
-        cv2.putText(
-
-            annotated_image,
-
-            label,
-
-            (
-                x1,
-                max(
-                    25,
-                    y1 - 10
-                )
-            ),
-
-            cv2.FONT_HERSHEY_SIMPLEX,
-
-            0.55,
-
-            box_color,
-
-            2
-        )
-
-
-    # ========================================================
-    # BATCH STATISTICS
-    # ========================================================
-
-    total = len(
-        onion_data
-    )
-
-    healthy_count = sum(
-
-        1
-
-        for onion in onion_data
-
-        if onion["Condition"]
-        == "Healthy"
-    )
-
-    unhealthy_count = sum(
-
-        1
-
-        for onion in onion_data
-
-        if onion["Condition"]
-        == "Unhealthy"
-    )
-
-    review_count = sum(
-
-        1
-
-        for onion in onion_data
-
-        if onion["Condition"]
-        == "Manual Review"
-    )
-
-
-    if total > 0:
-
-        healthy_percentage = (
-            healthy_count
-            / total
-            * 100
-        )
-
-        unhealthy_percentage = (
-            unhealthy_count
-            / total
-            * 100
-        )
-
-    else:
-
-        healthy_percentage = 0
-
-        unhealthy_percentage = 0
-
-
-    # ========================================================
-    # SHOW ANNOTATED IMAGE
-    # ========================================================
 
     with col2:
 
-        st.subheader(
-            "AI Inspection Result"
-        )
+        st.subheader("🤖 AI Analysis Result")
 
-        st.image(
-
-            cv2.cvtColor(
-                annotated_image,
-                cv2.COLOR_BGR2RGB
-            ),
-
-            use_container_width=True
+        st.info(
+            "Click the Analyze button to run the AI model."
         )
 
 
-    # ========================================================
-    # SUMMARY
-    # ========================================================
+    # ======================================================
+    # ANALYZE BUTTON
+    # ======================================================
 
-    st.markdown(
-        '<div class="section-title">'
-        '📊 Batch Summary'
-        '</div>',
-        unsafe_allow_html=True
+    analyze_button = st.button(
+        "🔍 Analyze Onions",
+        type="primary",
+        use_container_width=True
     )
 
 
-    m1, m2, m3, m4 = st.columns(4)
+    # ======================================================
+    # RUN ANALYSIS
+    # ======================================================
 
+    if analyze_button:
 
-    with m1:
+        try:
 
-        st.metric(
-            "Total Onions",
-            total
-        )
+            with st.spinner(
+                "Running Roboflow AI detection..."
+            ):
 
+                result = analyze_onions(
+                    temp_image_path
+                )
 
-    with m2:
 
-        st.metric(
-            "Healthy",
-            healthy_count,
-            f"{healthy_percentage:.1f}%"
-        )
+            # ==================================================
+            # EXTRACT RESULTS
+            # ==================================================
 
+            total_onions = result.get(
+                "total_onions",
+                0
+            )
 
-    with m3:
+            healthy_count = result.get(
+                "healthy",
+                0
+            )
 
-        st.metric(
-            "Unhealthy",
-            unhealthy_count,
-            f"{unhealthy_percentage:.1f}%"
-        )
+            rotten_count = result.get(
+                "rotten",
+                0
+            )
 
+            sprouted_count = result.get(
+                "sprouted",
+                0
+            )
 
-    with m4:
+            onion_results = result.get(
+                "results",
+                []
+            )
 
-        st.metric(
-            "Manual Review",
-            review_count
-        )
 
+            # ==================================================
+            # DISPLAY SUCCESS MESSAGE
+            # ==================================================
 
-    # ========================================================
-    # QUALITY BAR
-    # ========================================================
+            st.success(
+                "AI analysis completed successfully!"
+            )
 
-    if total > 0:
 
-        st.subheader(
-            "Batch Condition"
-        )
+            # ==================================================
+            # RESULTS IMAGE
+            # ==================================================
 
-        st.progress(
-            healthy_count / total
-        )
+            st.markdown("---")
 
-        st.caption(
-            f"{healthy_percentage:.1f}% "
-            "of detected onions classified as healthy"
-        )
+            col1, col2 = st.columns(2)
 
 
-    # ========================================================
-    # INDIVIDUAL RESULTS
-    # ========================================================
+            with col1:
 
-    st.markdown(
-        '<div class="section-title">'
-        '🔬 Individual Onion Results'
-        '</div>',
-        unsafe_allow_html=True
-    )
+                st.subheader("📷 Original Image")
 
+                st.image(
+                    original_image,
+                    use_container_width=True
+                )
 
-    if onion_data:
+            with col2:
 
-        df = pd.DataFrame(
-            onion_data
-        )
+                st.subheader("🤖 AI Analysis Result")
 
-        display_columns = [
+                output_image = get_output_image(result)
 
-            "Onion",
+                if output_image is not None:
 
-            "Detection Confidence",
+                    st.image(
+                        output_image,
+                        use_container_width=True
+                    )
 
-            "Condition",
+                else:
 
-            "Condition Confidence",
+                    st.warning(
+                        "Annotated output image could not be displayed."
+                    )
 
-            "Area (px²)",
 
-            "Width (px)",
+            # ==================================================
+            # SUMMARY METRICS
+            # ==================================================
 
-            "Height (px)",
+            st.markdown("---")
 
-            "Aspect Ratio",
+            st.subheader(
+                "📊 Detection Summary"
+            )
 
-            "Circularity",
 
-            "Brightness"
-        ]
+            metric1, metric2, metric3, metric4 = st.columns(
+                4
+            )
 
-        st.dataframe(
 
-            df[
-                display_columns
-            ],
+            with metric1:
 
-            use_container_width=True,
+                st.metric(
+                    "🧅 Total Onions",
+                    total_onions
+                )
 
-            hide_index=True
-        )
 
+            with metric2:
 
-    # ========================================================
-    # DOWNLOAD CSV
-    # ========================================================
+                st.metric(
+                    "🟢 Healthy",
+                    healthy_count
+                )
 
-    if onion_data:
 
-        csv_data = df.to_csv(
-            index=False
-        )
+            with metric3:
 
-        st.download_button(
+                st.metric(
+                    "🔴 Rotten",
+                    rotten_count
+                )
 
-            label="⬇️ Download CSV Report",
 
-            data=csv_data,
+            with metric4:
 
-            file_name="onion_batch_report.csv",
+                st.metric(
+                    "🌱 Sprouted",
+                    sprouted_count
+                )
 
-            mime="text/csv"
-        )
 
+            # ==================================================
+            # INDIVIDUAL ONION RESULTS TABLE
+            # ==================================================
 
-        # ----------------------------------------------------
-        # JSON report
-        # ----------------------------------------------------
+            st.markdown("---")
 
-        json_report = {
+            st.subheader(
+                "🧅 Individual Onion Results"
+            )
 
-            "total_onions":
-                total,
 
-            "healthy":
-                healthy_count,
+            table_data = []
 
-            "unhealthy":
-                unhealthy_count,
 
-            "manual_review":
-                review_count,
+            for index, onion in enumerate(
+                onion_results,
+                start=1
+            ):
 
-            "healthy_percentage":
-                round(
-                    healthy_percentage,
-                    2
-                ),
+                # ----------------------------------------------
+                # ONION NUMBER
+                # ----------------------------------------------
 
-            "unhealthy_percentage":
-                round(
-                    unhealthy_percentage,
-                    2
-                ),
+                onion_number = onion.get(
+                    "Onion Number",
+                    onion.get(
+                        "onion_number",
+                        index
+                    )
+                )
 
-            "onions":
-                onion_data
-        }
 
+                # ----------------------------------------------
+                # DETECTION CONFIDENCE
+                # ----------------------------------------------
 
-        json_data = json.dumps(
-            json_report,
-            indent=4
-        )
+                detection_confidence = onion.get(
+                    "Detection Confidence",
+                    onion.get(
+                        "Confidence",
+                        onion.get(
+                            "confidence",
+                            0
+                        )
+                    )
+                )
 
 
-        st.download_button(
+                # ----------------------------------------------
+                # CONDITION
+                # ----------------------------------------------
 
-            label="⬇️ Download JSON Report",
+                condition = onion.get(
+                    "Condition",
+                    onion.get(
+                        "condition",
+                        "Rotten"
+                    )
+                )
 
-            data=json_data,
 
-            file_name="onion_batch_report.json",
+                # Safety replacement:
+                # Manual Review and Unhealthy should never
+                # appear on dashboard.
 
-            mime="application/json"
-        )
+                if str(condition).lower() in [
+                    "manual review",
+                    "manual_review",
+                    "unhealthy",
+                    "unknown"
+                ]:
+                    condition = "Rotten"
 
 
-    # ========================================================
-    # PROJECT DISCLAIMER
-    # ========================================================
+                # ----------------------------------------------
+                # CONDITION CONFIDENCE
+                # ----------------------------------------------
 
-    st.divider()
+                condition_confidence = onion.get(
+                    "Condition Confidence",
+                    onion.get(
+                        "condition_confidence",
+                        detection_confidence
+                    )
+                )
+
+
+                # ----------------------------------------------
+                # IMAGE ANALYSIS VALUES
+                # ----------------------------------------------
+
+                area = onion.get(
+                    "Area (px²)",
+                    onion.get(
+                        "Area",
+                        onion.get(
+                            "area",
+                            0
+                        )
+                    )
+                )
+
+
+                width = onion.get(
+                    "Width (px)",
+                    onion.get(
+                        "Width",
+                        onion.get(
+                            "width",
+                            0
+                        )
+                    )
+                )
+
+
+                height = onion.get(
+                    "Height (px)",
+                    onion.get(
+                        "Height",
+                        onion.get(
+                            "height",
+                            0
+                        )
+                    )
+                )
+
+
+                aspect_ratio = onion.get(
+                    "Aspect Ratio",
+                    onion.get(
+                        "aspect_ratio",
+                        0
+                    )
+                )
+
+
+                circularity = onion.get(
+                    "Circularity",
+                    onion.get(
+                        "circularity",
+                        0
+                    )
+                )
+
+
+                brightness = onion.get(
+                    "Brightness",
+                    onion.get(
+                        "brightness",
+                        0
+                    )
+                )
+
+
+                # ----------------------------------------------
+                # ADD ROW
+                # ----------------------------------------------
+
+                table_data.append(
+                    {
+                        "Onion": onion_number,
+
+                        "Detection Confidence":
+                            round(
+                                float(
+                                    detection_confidence
+                                ),
+                                3
+                            ),
+
+                        "Condition":
+                            condition,
+
+                        "Condition Confidence":
+                            round(
+                                float(
+                                    condition_confidence
+                                ),
+                                3
+                            ),
+
+                        "Area (px²)":
+                            round(
+                                float(area),
+                                2
+                            ),
+
+                        "Width (px)":
+                            round(
+                                float(width),
+                                2
+                            ),
+
+                        "Height (px)":
+                            round(
+                                float(height),
+                                2
+                            ),
 
-    st.info(
-        "Prototype note: Healthy/Unhealthy classification "
-        "is AI-assisted and should be manually reviewed when "
-        "confidence is low. Physical size is reported in "
-        "pixels until camera calibration is performed."
-    )
+                        "Aspect Ratio":
+                            round(
+                                float(
+                                    aspect_ratio
+                                ),
+                                3
+                            ),
+
+                        "Circularity":
+                            round(
+                                float(
+                                    circularity
+                                ),
+                                3
+                            ),
+
+                        "Brightness":
+                            round(
+                                float(
+                                    brightness
+                                ),
+                                2
+                            )
+                    }
+                )
+
+
+            # ==================================================
+            # DISPLAY TABLE
+            # ==================================================
+
+            if table_data:
+
+                df = pd.DataFrame(
+                    table_data
+                )
+
+
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+
+                # ==============================================
+                # DOWNLOAD CSV
+                # ==============================================
+
+                csv_data = df.to_csv(
+                    index=False
+                ).encode(
+                    "utf-8"
+                )
+
+
+                st.download_button(
+                    label="⬇️ Download CSV Report",
+                    data=csv_data,
+                    file_name="onion_quality_report.csv",
+                    mime="text/csv"
+                )
+
+
+                # ==============================================
+                # DOWNLOAD JSON
+                # ==============================================
+
+                json_data = json.dumps(
+                    table_data,
+                    indent=4
+                )
+
+
+                st.download_button(
+                    label="⬇️ Download JSON Report",
+                    data=json_data,
+                    file_name="onion_quality_report.json",
+                    mime="application/json"
+                )
+
+
+            else:
+
+                st.warning(
+                    "No onion detections were returned."
+                )
+
+
+            # ==================================================
+            # QUALITY SUMMARY
+            # ==================================================
+
+            st.markdown("---")
+
+            st.subheader(
+                "📈 Quality Assessment"
+            )
+
+
+            if total_onions > 0:
+
+                healthy_percentage = (
+                    healthy_count
+                    / total_onions
+                ) * 100
+
+
+                rotten_percentage = (
+                    rotten_count
+                    / total_onions
+                ) * 100
+
+
+                sprouted_percentage = (
+                    sprouted_count
+                    / total_onions
+                ) * 100
+
+
+                chart_data = pd.DataFrame(
+                    {
+                        "Category": [
+                            "Healthy",
+                            "Rotten",
+                            "Sprouted"
+                        ],
+
+                        "Count": [
+                            healthy_count,
+                            rotten_count,
+                            sprouted_count
+                        ]
+                    }
+                )
+
+
+                st.bar_chart(
+                    chart_data.set_index(
+                        "Category"
+                    )
+                )
+
+
+                percentage_col1, percentage_col2, percentage_col3 = (
+                    st.columns(3)
+                )
+
+
+                with percentage_col1:
+
+                    st.info(
+                        f"🟢 Healthy: "
+                        f"{healthy_percentage:.1f}%"
+                    )
+
+
+                with percentage_col2:
+
+                    st.error(
+                        f"🔴 Rotten: "
+                        f"{rotten_percentage:.1f}%"
+                    )
+
+
+                with percentage_col3:
+
+                    st.warning(
+                        f"🌱 Sprouted: "
+                        f"{sprouted_percentage:.1f}%"
+                    )
+
+
+            else:
+
+                st.warning(
+                    "No onions detected in this image."
+                )
+
+
+        except Exception as e:
+
+            st.error(
+                "An error occurred during AI analysis."
+            )
+
+            st.exception(
+                e
+            )
+
+
+        finally:
+
+            # Remove temporary image file
+
+            if os.path.exists(
+                temp_image_path
+            ):
+
+                try:
+
+                    os.remove(
+                        temp_image_path
+                    )
+
+                except Exception:
+
+                    pass
+
+
+# ==========================================================
+# FOOTER
+# ==========================================================
+
+st.markdown("---")
+
+st.caption(
+    "🧅 Onion Quality Assessment System | "
+    "AI-Powered Detection using Roboflow"
+)
